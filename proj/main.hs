@@ -89,7 +89,7 @@ run (inst:code, stack, state) = case inst of
       StackInt value1 : StackInt value2 : restStack -> run (code, StackBool value : restStack, state)
         where value = value1 <= value2
       _ -> error "Run-time error"
-    
+
     runLogicalOperation op = case stack of
       StackBool value1 : StackBool value2 : restStack -> run (code, StackBool value : restStack, state)
         where value = value1 `op` value2
@@ -98,11 +98,11 @@ run (inst:code, stack, state) = case inst of
     runNegOperation = case stack of
       StackBool value : restStack -> run (code, StackBool (not value) : restStack, state)
       _ -> error "Run-time error"
-    
+
     fetchValue var = case lookup var state of
       Just value -> value
       Nothing -> error "Run-time error: Variable not found"
-    
+
     storeValue var value state = case lookup var state of
       Just _ -> (var, value) : filter (\(var', _) -> var' /= var) state
       Nothing -> (var, value) : state
@@ -111,7 +111,7 @@ run (inst:code, stack, state) = case inst of
       (StackBool True) : rest -> run (c1 ++ code, rest, state)
       (StackBool False) : rest -> run (c2 ++ code, rest, state)
       _ -> error "Run-time error: Invalid argument for branch"
-        
+
     runLoop code1 code2 = run (code1 ++ [Branch (code2 ++ [Loop code1 code2]) [Noop]], stack, state)
 
 -- To help you test your assembler
@@ -161,12 +161,17 @@ compB TruB = [Tru]
 compB FalsB = [Fals]
 
 compile :: Program -> Code
-compile = concatMap compileStm
+compile [] = []
+compile (stm : stms) =
+  case stm of
+    VarAssign var aexp ->
+      compA aexp ++ [Store var] ++ compile stms
 
-compileStm :: Stm -> Code
-compileStm (VarAssign var aexp) = compA aexp ++ [Store var]
-compileStm (BranchS bexp stm1 stm2) = compB bexp ++ [Branch (compile stm1) (compile stm2)]
-compileStm (LoopS bexp stm) = [Loop (compB bexp) (compile stm)]
+    BranchS bexp trueBranch falseBranch ->
+      compB bexp ++ [Branch (compile trueBranch) (compile falseBranch)] ++ compile stms
+
+    LoopS bexp loopBody ->
+      Loop (compB bexp) (compile loopBody) : compile stms
 
 parse :: String -> Program
 parse str = parseaux (lexer str) []
@@ -413,3 +418,52 @@ testParser programCode = (stack2Str stack, state2Str state)
 -- testParser "if (1 == 0+1 = (2+1 == 4)) then x := 1; else x := 2;" == ("","x=2")
 -- testParser "x := 2; y := (x - 3)*(4 + 2*3); z := x +x*(2);" == ("","x=2,y=-10,z=6")
 -- testParser "i := 10; fact := 1; while (not(i == 1)) do (fact := fact * i; i := i - 1;);" == ("","fact=3628800,i=1")
+
+-- Function to test Part 1 examples
+testPart1 :: IO ()
+testPart1 = do
+  let testResults =
+        [ testAssembler [Push 10, Push 4, Push 3, Sub, Mult] == ("-10", "")
+        , testAssembler [Fals, Push 3, Tru, Store "var", Store "a", Store "someVar"] == ("", "a=3,someVar=False,var=True")
+        , testAssembler [Fals, Store "var", Fetch "var"] == ("False", "var=False")
+        , testAssembler [Push (-20), Tru, Fals] == ("False,True,-20", "")
+        , testAssembler [Push (-20), Tru, Tru, Neg] == ("False,True,-20", "")
+        , testAssembler [Push (-20), Tru, Tru, Neg, Equ] == ("False,-20", "")
+        , testAssembler [Push (-20), Push (-21), Le] == ("True", "")
+        , testAssembler [Push 5, Store "x", Push 1, Fetch "x", Sub, Store "x"] == ("", "x=4")
+        , testAssembler [Push 10, Store "i", Push 1, Store "fact", Loop [Push 1, Fetch "i", Equ, Neg] [Fetch "i", Fetch "fact", Mult, Store "fact", Push 1, Fetch "i", Sub, Store "i"]] == ("", "fact=3628800,i=1")
+        -- Add more test cases if needed
+        ]
+
+  if and testResults
+    then putStrLn "Part 1 tests passed!"
+    else putStrLn "Part 1 tests failed!"
+
+-- Function to test Part 2 examples
+testPart2 :: IO ()
+testPart2 = do
+  let testResults =
+        [ testParser "x := 5; x := x - 1;" == ("", "x=4")
+        , testParser "x := 0 - 2;" == ("", "x=-2")
+        , testParser "if (not True and 2 <= 5 = 3 == 4) then x :=1; else y := 2;" == ("", "y=2")
+        , testParser "x := 42; if x <= 43 then x := 1; else (x := 33; x := x+1;);" == ("", "x=1")
+        , testParser "x := 42; if x <= 43 then x := 1; else x := 33; x := x+1;" == ("", "x=2")
+        , testParser "x := 42; if x <= 43 then x := 1; else x := 33; x := x+1; z := x+x;" == ("", "x=2,z=4")
+        , testParser "x := 44; if x <= 43 then x := 1; else (x := 33; x := x+1;); y := x*2;" == ("", "x=34,y=68")
+        , testParser "x := 42; if x <= 43 then (x := 33; x := x+1;) else x := 1;" == ("", "x=34")
+        , testParser "if (1 == 0+1 = 2+1 == 3) then x := 1; else x := 2;" == ("", "x=1")
+        , testParser "if (1 == 0+1 = (2+1 == 4)) then x := 1; else x := 2;" == ("", "x=2")
+        , testParser "x := 2; y := (x - 3)*(4 + 2*3); z := x +x*(2);" == ("", "x=2,y=-10,z=6")
+        , testParser "i := 10; fact := 1; while (not(i == 1)) do (fact := fact * i; i := i - 1;);" == ("", "fact=3628800,i=1")
+        -- Add more test cases if needed
+        ]
+
+  if and testResults
+    then putStrLn "Part 2 tests passed!"
+    else putStrLn "Part 2 tests failed!"
+
+-- Run the tests
+main :: IO ()
+main = do
+  testPart1
+  testPart2
