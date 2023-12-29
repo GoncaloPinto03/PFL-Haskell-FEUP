@@ -19,119 +19,100 @@ data Inst =
   deriving Show
 type Code = [Inst]
 
-data StackValue = StackInt Integer | StackT | StackF deriving (Show, Eq)
+data StackValue = StackInt Integer | StackBool Bool deriving Show
 type Stack = [StackValue]
 
 -- createEmptyStack :: Stack
 createEmptyStack :: Stack
 createEmptyStack = []
 
-stackValueToString :: StackValue -> String
-stackValueToString (StackInt n) = show n
-stackValueToString StackT = "True"
-stackValueToString StackF = "False"
-
--- stack2Str :: Stack -> String
-stack2Str :: Stack -> String
-stack2Str stack = intercalate "," (map stackValueToString stack)
-
--- Add the following definition for State
-type Key = String
-type Val = StackValue
-
-type State = HashMap.Map Key Val
+type State = [(String, StackValue)]
 
 -- createEmptyState :: State
 createEmptyState :: State
-createEmptyState = HashMap.empty
+createEmptyState = []
 
-insertIntoState :: Key -> Val -> State -> State
-insertIntoState = HashMap.insert
+-- stack2Str :: Stack -> String
+stack2Str :: Stack -> String
+stack2Str stack = intercalate "," (map stackValueToStr stack)
+  where
+    stackValueToStr (StackInt n) = show n
+    stackValueToStr (StackBool b) = show b
 
 -- state2Str :: State -> String
 state2Str :: State -> String
-state2Str state = intercalate "," [var ++ "=" ++ stackValueToString val | (var, val) <- toList state]
+state2Str state = intercalate "," [var ++ "=" ++ stackValueToStr val | (var, val) <- sortBy (comparing fst) state]
+  where
+    stackValueToStr (StackInt n) = show n
+    stackValueToStr (StackBool b) = show b
 
+-- run :: (Code, Stack, State) -> (Code, Stack, State)
 run :: (Code, Stack, State) -> (Code, Stack, State)
-run ([], stack, state) = ([], stack, state)
-
-run (instruction:remainingCode, stack, state) = case instruction of
-    Push n -> run (remainingCode, StackInt n:stack, state)
-    Add -> runAddBinaryOperation
-    Mult -> runMultBinaryOperation
-    Sub -> runSubBinaryOperation
-    Tru -> run (remainingCode, StackT:stack, state)
-    Fals -> run (remainingCode, StackF:stack, state)
-    Equ -> runEquComparisonOperation
-    Le -> runLeComparisonOperation
-    And -> runLogicalOperation (&&)
-    Neg -> runNegationOperation
-    Fetch key -> runFetchOperation key
-    Store key -> runStoreOperation key
-    Branch code1 code2 -> runBranchOperation code1 code2
-    Loop code1 code2 -> runLoopOperation code1 code2
-    Noop -> run (remainingCode, stack, state)
+run ([], stack, state) = ([], stack, state) -- Base case: empty code, return the current state
+run (inst:code, stack, state) = case inst of
+  Push n -> run (code, StackInt n : stack, state)
+  Add -> runAddBinaryOperation
+  Mult -> runMultBinaryOperation
+  Sub -> runSubBinaryOperation
+  Tru -> run (code, StackBool True : stack, state)
+  Fals -> run (code, StackBool False : stack, state)
+  Equ -> runEquComparisonOperation
+  Le -> runLeComparisonOperation
+  And -> runLogicalOperation (&&)
+  Neg -> runNegOperation
+  Fetch var -> run (code, fetchValue var : stack, state)
+  Store var -> run (code, drop 1 stack, storeValue var (head stack) state)
+  Noop -> run (code, stack, state)
+  Branch c1 c2 -> runBranch c1 c2
+  Loop c1 c2 -> runLoop c1 c2
   where
     runAddBinaryOperation = case stack of
-        StackInt value1:StackInt value2:restStack -> run (remainingCode, StackInt (value1 + value2):restStack, state)
-        _ -> error "Runtime error: Invalid operation"
+      StackInt value1:StackInt value2:restStack -> run (code, StackInt (value1 + value2):restStack, state)
+      _ -> error "Runtime error: Invalid operation"
 
     runSubBinaryOperation = case stack of
-        StackInt value1:StackInt value2:restStack -> run (remainingCode, StackInt (value1 - value2):restStack, state)
+        StackInt value1:StackInt value2:restStack -> run (code, StackInt (value1 - value2):restStack, state)
         _ -> error "Runtime error: Invalid operation"
 
     runMultBinaryOperation = case stack of
-        StackInt value1:StackInt value2:restStack -> run (remainingCode, StackInt (value1 * value2):restStack, state)
+        StackInt value1:StackInt value2:restStack -> run (code, StackInt (value1 * value2):restStack, state)
         _ -> error "Runtime error: Invalid operation"
 
     runEquComparisonOperation = case stack of
-        StackInt value1 : StackInt value2 : restStack -> run (remainingCode, value:restStack, state)
-          where value = if value1 == value2 then StackT else StackF
-        StackT : StackT : restStack -> run (remainingCode, value:restStack, state)
-            where value = if StackT == StackT then StackT else StackF
-        StackT : StackF : restStack -> run (remainingCode, value:restStack, state)
-            where value = if StackT == StackF then StackT else StackF
-        StackF : StackT : restStack -> run (remainingCode, value:restStack, state)
-            where value = if StackF == StackT then StackT else StackF
-        StackF : StackF : restStack -> run (remainingCode, value:restStack, state)
-            where value = if StackF == StackF then StackT else StackF
-        _ -> error "Runtime error: Invalid operation"
+      StackInt value1 : StackInt value2 : restStack -> run (code, StackBool value : restStack, state)
+        where value = value1 == value2
+      StackBool value1 : StackBool value2 : restStack -> run (code, StackBool value : restStack, state)
+        where value = value1 == value2
+      _ -> error "Run-time error"
 
     runLeComparisonOperation = case stack of
-            StackInt value1:StackInt value2:restStack -> run (remainingCode, value:restStack, state)
-              where value = if value1 <= value2 then StackT else StackF
-            _ -> error "Runtime error: Invalid operation"
+      StackInt value1 : StackInt value2 : restStack -> run (code, StackBool value : restStack, state)
+        where value = value1 <= value2
+      _ -> error "Run-time error"
+    
+    runLogicalOperation op = case stack of
+      StackBool value1 : StackBool value2 : restStack -> run (code, StackBool value : restStack, state)
+        where value = value1 `op` value2
+      _ -> error "Run-time error"
 
-    runLogicalOperation logOp = case stack of
-        StackT:StackT:restStack -> run (remainingCode, StackT:restStack, state)
-        StackT:StackF:restStack -> run (remainingCode, StackF:restStack, state)
-        StackF:StackT:restStack -> run (remainingCode, StackF:restStack, state)
-        StackF:StackF:restStack -> run (remainingCode, StackF:restStack, state)
-        StackInt _:restStack -> error "Runtime error: Invalid operation"
-        _ -> error "Runtime error: Insufficient operands"
+    runNegOperation = case stack of
+      StackBool value : restStack -> run (code, StackBool (not value) : restStack, state)
+      _ -> error "Run-time error"
+    
+    fetchValue var = case lookup var state of
+      Just value -> value
+      Nothing -> error "Run-time error: Variable not found"
+    
+    storeValue var value state = case lookup var state of
+      Just _ -> (var, value) : filter (\(var', _) -> var' /= var) state
+      Nothing -> (var, value) : state
 
-    runNegationOperation = case stack of
-        StackT:restStack -> run (remainingCode, StackF:restStack, state)
-        StackF:restStack -> run (remainingCode, StackT:restStack, state)
-        StackInt _:restStack -> error "Runtime error: Invalid operation"
-        _ -> error "Runtime error: Insufficient operands"
-
-    runFetchOperation key = case HashMap.lookup key state of
-        Just value -> run (remainingCode, value:stack, state)
-        Nothing -> error "Runtime error: Variable not found"
-
-    runStoreOperation key = case stack of
-        stacktop:restStack -> run (remainingCode, restStack, insertIntoState key stacktop state)
-        _ -> error "Runtime error: Insufficient operands"
-
-    runBranchOperation code1 code2 = case stack of
-        StackT:restStack -> run (code1, restStack, state)
-        StackF:restStack -> run (code2, restStack, state)
-        StackInt _:restStack -> error "Runtime error: Invalid operation"
-        _ -> error "Runtime error: Insufficient operands"
-
-    runLoopOperation code1 code2 = run (code1 ++ [Branch (code2 ++ [Loop code1 code2]) [Noop]], stack, state)
-
+    runBranch c1 c2 = case stack of
+      (StackBool True) : rest -> run (c1 ++ code, rest, state)
+      (StackBool False) : rest -> run (c2 ++ code, rest, state)
+      _ -> error "Run-time error: Invalid argument for branch"
+        
+    runLoop code1 code2 = run (code1 ++ [Branch (code2 ++ [Loop code1 code2]) [Noop]], stack, state)
 
 -- To help you test your assembler
 testAssembler :: Code -> (String, String)
@@ -139,7 +120,7 @@ testAssembler code = (stack2Str stack, state2Str state)
   where (_,stack,state) = run (code, createEmptyStack, createEmptyState)
 
 -- Examples:
--- testAssembler [Push 10,Push 4,Push 3,Sub,Mult] == ("-10","") Passou 
+-- testAssembler [Push 10,Push 4,Push 3,Sub,Mult] == ("-10","")
 -- testAssembler [Fals,Push 3,Tru,Store "var",Store "a", Store "someVar"] == ("","a=3,someVar=False,var=True")
 -- testAssembler [Fals,Store "var",Fetch "var"] == ("False","var=False")
 -- testAssembler [Push (-20),Tru,Fals] == ("False,True,-20","")
@@ -148,6 +129,13 @@ testAssembler code = (stack2Str stack, state2Str state)
 -- testAssembler [Push (-20),Push (-21), Le] == ("True","")
 -- testAssembler [Push 5,Store "x",Push 1,Fetch "x",Sub,Store "x"] == ("","x=4")
 -- testAssembler [Push 10,Store "i",Push 1,Store "fact",Loop [Push 1,Fetch "i",Equ,Neg] [Fetch "i",Fetch "fact",Mult,Store "fact",Push 1,Fetch "i",Sub,Store "i"]] == ("","fact=3628800,i=1")
+-- If you test:
+-- testAssembler [Push 1,Push 2,And]
+-- You should get an exception with the string: "Run-time error"
+-- If you test:
+-- testAssembler [Tru,Tru,Store "y", Fetch "x",Tru]
+-- You should get an exception with the string: "Run-time error"
+
 
 -- Part 2
 data Aexp = Num Integer | Var String | AddA Aexp Aexp | SubA Aexp Aexp | MultA Aexp Aexp  deriving Show
