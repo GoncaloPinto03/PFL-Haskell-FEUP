@@ -68,15 +68,15 @@ run (inst:code, stack, state) = case inst of
   where
     runAddBinaryOperation = case stack of
       StackInt value1:StackInt value2:restStack -> run (code, StackInt (value1 + value2):restStack, state)
-      _ -> error "Runtime error: Invalid operation"
+      _ -> error "Runtime error"
 
     runSubBinaryOperation = case stack of
         StackInt value1:StackInt value2:restStack -> run (code, StackInt (value1 - value2):restStack, state)
-        _ -> error "Runtime error: Invalid operation"
+        _ -> error "Runtime error"
 
     runMultBinaryOperation = case stack of
         StackInt value1:StackInt value2:restStack -> run (code, StackInt (value1 * value2):restStack, state)
-        _ -> error "Runtime error: Invalid operation"
+        _ -> error "Runtime error"
 
     runEquComparisonOperation = case stack of
       StackInt value1 : StackInt value2 : restStack -> run (code, StackBool value : restStack, state)
@@ -101,7 +101,7 @@ run (inst:code, stack, state) = case inst of
 
     fetchValue var = case lookup var state of
       Just value -> value
-      Nothing -> error "Run-time error: Variable not found"
+      Nothing -> error "Run-time error"
 
     storeValue var value state = case lookup var state of
       Just _ -> (var, value) : filter (\(var', _) -> var' /= var) state
@@ -110,7 +110,7 @@ run (inst:code, stack, state) = case inst of
     runBranch c1 c2 = case stack of
       (StackBool True) : rest -> run (c1 ++ code, rest, state)
       (StackBool False) : rest -> run (c2 ++ code, rest, state)
-      _ -> error "Run-time error: Invalid argument for branch"
+      _ -> error "Run-time error"
 
     runLoop code1 code2 = run (code1 ++ [Branch (code2 ++ [Loop code1 code2]) [Noop]], stack, state)
 
