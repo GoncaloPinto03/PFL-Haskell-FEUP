@@ -173,6 +173,52 @@ compile (stm : stms) =
     LoopS bexp loopBody ->
       Loop (compB bexp) (compile loopBody) : compile stms
 
+-- Compiler tests
+
+testProgram1 :: Program
+testProgram1 = [VarAssign "x" (Num 5), VarAssign "y" (AddA (Var "x") (Num 3))]
+-- Expected output: ("","x=5,y=8")
+-- Explanation: Assigns 5 to variable x and then calculates y = x + 3.
+
+testProgram2 :: Program
+testProgram2 = [VarAssign "x" (Num 5), BranchS (EquB (Var "x") (Num 5)) [VarAssign "y" (Num 10)] [VarAssign "y" (Num 20)]]
+-- Expected output: ("","x=5,y=10")
+-- Explanation: Checks if x is equal to 5. If true, assigns 10 to y, otherwise assigns 20.
+
+testProgram3 :: Program
+testProgram3 = [VarAssign "x" (Num 5), LoopS (LeB (Var "x") (Num 10)) [VarAssign "x" (MultA (Var "x") (Num 2))]]
+-- Expected output: ("","x=20")
+-- Explanation: Initializes x to 5 and then multiplies x by 2 in a loop until x is no longer less than or equal to 10.
+
+testProgram4 :: Program
+testProgram4 =
+  [ VarAssign "x" (Num 5),
+    VarAssign "y" (AddA (Var "x") (Num 3)),
+    BranchS (AndB (LeB (Var "x") (Num 5)) (EquBoolB (NegB FalsB) TruB)) [VarAssign "z" (Num 42)] [VarAssign "z" (Num 0)]
+  ]
+-- Expected output: ("","x=5,y=8,z=42")
+-- Explanation: Assigns values to x and y, then checks a complex condition to determine whether to set z to 42 or 0.
+
+compileAndRun :: Program -> (String, String)
+compileAndRun program = testAssembler (compile program)
+
+-- Compiler tests
+testResult1 :: (String, String)
+testResult1 = compileAndRun testProgram1
+-- Expected output: ("","x=5,y=8")
+
+testResult2 :: (String, String)
+testResult2 = compileAndRun testProgram2
+-- Expected output: ("","x=5,y=20")
+
+testResult3 :: (String, String)
+testResult3 = compileAndRun testProgram3
+-- Expected output: ("","x=40")
+
+testResult4 :: (String, String)
+testResult4 = compileAndRun testProgram4
+-- Expected output: ("","x=5,y=8,z=42")
+
 parse :: String -> Program
 parse str = parseaux (lexer str) []
 
