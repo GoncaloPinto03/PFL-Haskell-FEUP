@@ -107,5 +107,11 @@ mediana a b c   | a >= b && a >= c && c >= b = c
                 | a < b && a > c = a
                 | a < b && a < c && b >= c = c
                 | a < b && a < c && b < c = b
+
+mediana2 :: Int -> Int -> Int -> Int
+mediana2 a b c = a + b + c - min3 - max3 
+        where 
+        min3 = min a (min b c) 
+        max3 = max a (max b c)
                 
                 
