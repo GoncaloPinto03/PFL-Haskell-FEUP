@@ -223,91 +223,99 @@ testResult4 = compileAndRun testProgram4
 -- Expected output: ("","x=5,y=8,z=42")
 
 parse :: String -> Program
-parse programC = parseCode (lexer programC) []
+parse programS = parseStatements (lexer programS) []
 
-parseCode :: [String] -> [Stm] -> [Stm]
-parseCode [] stm = reverse stm
-parseCode (a:":=":rest) stm =
+parseStatements :: [String] -> [Stm] -> [Stm]
+parseStatements [] stm = reverse stm 
+parseStatements (a:":=":rest) stm =  -- Caso de atribuição ":="
   let x = fromMaybe 0 $ fmap (+1) (elemIndex ";" (a:":=":rest))
-  in case parseSumOrProdOrIntOrPar (drop 2 (take (x-1) (a:":=":rest))) of
-       Just (expr, []) -> parseCode (drop x (a:":=":rest)) (VarAssign a expr : stm)
-       _               -> error "Parse Error"
-parseCode ("(":rest) stm =
+  in case parseSumOrProdOrIntOrPar (drop 2 (take (x-1) (a:":=":rest))) of -- Se a expressão for válida, adiciona uma instrução VarAssign à lista de instruções
+       Just (expr, []) -> parseStatements (drop x (a:":=":rest)) (VarAssign a expr : stm)
+       _               -> error "Run-time error" -- Se a expressão não for válida, lança um erro "Parse Error"
+parseStatements ("(":rest) stm =  -- Caso de expressões em parênteses
   let index = fromMaybe 0 $ fmap (+1) (elemIndex ")" ("(":rest))
-  in parseCode (drop (index + 1) ("(":rest)) (parseCode (drop 1 (take index ("(":rest))) [] ++ stm)
-parseCode (";":rest) stm = parseCode rest stm
-parseCode (a:rest) stm =
-  let x = fromMaybe 0 $ fmap (+1) (elemIndex ";" (a:rest))
-  in case parseSumOrProdOrIntOrPar (drop 1 (take (x-1) (a:rest))) of
-       Just (expr, []) -> parseCode (drop x rest) (VarAssign a expr : stm)
-       _               -> error "Parse Error"
+  in parseStatements (drop (index + 1) ("(":rest)) (parseStatements (drop 1 (take index ("(":rest))) [] ++ stm)
+parseStatements (";":rest) stm = parseStatements rest stm -- Caso de ponto e vírgula ";"
+parseStatements (a:rest) stm =   -- Caso geral (identificadores, expressões)
+  let x = fromMaybe 0 $ fmap (+1) (elemIndex ";" (a:rest)) -- Calcula x, que é o índice do ponto e vírgula (;) que marca o final da expressão atual.
+  in case parseSumOrProdOrIntOrPar (drop 1 (take (x-1) (a:rest))) of -- Se a expressão for válida, adiciona uma instrução VarAssign à lista de instruções
+       Just (expr, []) -> parseStatements (drop x rest) (VarAssign a expr : stm)
+       _               -> error "Run-time error"
+
 
 parseInt :: [String] -> Maybe (Aexp, [String])
 parseInt [] = Nothing
 parseInt (n:rest) =
   case readMaybe n of
-    Just f -> Just (Num f, rest)
-    _      -> Just (Var n, rest)
+    Just f -> Just (Num f, rest)  -- Se a conversão para número funcionar, retorna um número e a lista restante.
+    _      -> Just (Var n, rest)  -- Se a conversão falhar, assume que é uma variável e retorna uma variável e a lista restante.
+   
 
 
 parseProdOrInt :: [String] -> Maybe(Aexp,[String])
 parseProdOrInt strings =
   case parseInt strings of
-    Just (expr1,("*":restString1)) ->
-      case parseProdOrInt restString1 of
-        Just (expr2,restString2) ->
+    Just (expr1,("*":restString1)) ->      -- Se a análise for bem-sucedida e a próxima string for "*", continua com a análise da expressão de multiplicação.
+      case parseProdOrInt restString1 of        -- Analisa a parte restante da expressão após o "*" usando parseProdOrInt.
+        Just (expr2,restString2) ->            -- Se a análise for bem-sucedida, cria uma expressão de multiplicação e retorna a lista restante.
           Just (MultA expr1 expr2,restString2)
         Nothing                  -> Nothing
-    result -> result
+    result -> result      -- Se a análise inicial falhar, retorna o resultado da análise de parseInt.
 
-parseSumOrProdOrInt :: [String] -> Maybe(Aexp,[String])
+parseSumOrProdOrInt :: [String] -> Maybe(Aexp,[String])  --recebe uma lista de strings e tenta analisar uma expressão que pode incluir adição, subtração ou multiplicação.
 parseSumOrProdOrInt strings =
-  case parseProdOrInt strings of
-    Just (expr1,("+":restString1)) ->
-      case parseSumOrProdOrInt restString1 of
+  case parseProdOrInt strings of   -- Tenta analisar a expressão como uma expressão de multiplicação usando parseProdOrInt.
+    Just (expr1,("+":restString1)) -> -- Se a análise for bem-sucedida e a próxima string for "+", continua com a análise da expressão de adição.
+      case parseSumOrProdOrInt restString1 of     -- Analisa a parte restante da expressão após o "+" usando parseSumOrProdOrInt.
         Just (expr2,restString2) ->
           Just (AddA expr1 expr2,restString2)
         Nothing                  -> Nothing
-    Just (expr1,("-":restString1)) ->
+    Just (expr1,("-":restString1)) ->   -- Se a próxima string for "-", continua com a análise da expressão de subtração.
       case parseSumOrProdOrInt restString1 of
         Just (expr2,restString2) ->
           Just (SubA expr1 expr2,restString2)
         Nothing                  -> Nothing
-    result -> result
+    result -> result -- Se a análise inicial falhar, retorna o resultado da análise de parseProdOrInt.
 
-
---Ver melhor 
 parseIntOrParentExpr :: [String] -> Maybe (Aexp,[String])
 parseIntOrParentExpr ("(":rest) =
   case parseSumOrProdOrIntOrPar rest of
     Just (expr,(")":restString1)) -> Just (expr,restString1)
-    Just _ -> Nothing
+    Just _ -> Nothing  -- Se a análise não for bem-sucedida ou o parêntese fechado não for encontrado, retorna Nothing.
     Nothing -> Nothing
+
+-- Caso a lista comece com uma string n,
+-- a função tenta converter n para um Integer usando readMaybe.
+-- Se a conversão for bem-sucedida, retorna uma tupla Just com uma expressão numérica (Num) e a lista restante de strings.
+-- Se a conversão não for bem-sucedida, assume que n é uma variável e retorna uma tupla Just com uma expressão de variável (Var) e a lista restante de strings.
 parseIntOrParentExpr (n:rest) =
   case (readMaybe n :: Maybe Integer) of
     Just f -> Just (Num f, rest)
     Nothing -> Just (Var n,rest)
 parseIntOrParentExpr _ = Nothing
 
-parseProdOrIntOrPar :: [String] -> Maybe (Aexp,[String])
+
+
+
+parseProdOrIntOrPar :: [String] -> Maybe (Aexp, [String])
 parseProdOrIntOrPar rest =
-  case parseIntOrParentExpr rest of
-    Just (expr1,("*":restString1)) ->
-      case parseProdOrIntOrPar restString1 of
-        Just (expr2,restString2) -> Just (MultA expr1 expr2, restString2)
+  case parseIntOrParentExpr rest of -- Tenta analisar a expressão como um número, variável ou expressão entre parênteses usando parseIntOrParentExpr.
+    Just (expr1, ("*":restString1)) -> -- Se a análise for bem-sucedida e a próxima string for "*", continua com a análise da expressão de multiplicação.
+      case parseProdOrIntOrPar restString1 of -- Analisa a parte restante da expressão 
+        Just (expr2, restString2) -> Just (MultA expr1 expr2, restString2) -- Se a análise for bem-sucedida, cria uma expressão de multiplicação e retorna a lista restante.
         Nothing -> Nothing
     result -> result
 
-parseSumOrProdOrIntOrPar :: [String] -> Maybe (Aexp,[String])
+parseSumOrProdOrIntOrPar :: [String] -> Maybe (Aexp, [String])
 parseSumOrProdOrIntOrPar rest =
-  case parseProdOrIntOrPar rest of
-    Just (expr1,("+":restString1)) ->
+  case parseProdOrIntOrPar rest of -- Tenta analisar a expressão como uma expressão de multiplicação ou parênteses usando parseProdOrIntOrPar.
+    Just (expr1, ("+":restString1)) -> -- Se a análise for bem-sucedida e a próxima string for "+", continua com a análise da expressão de adição.
       case parseSumOrProdOrIntOrPar restString1 of
-        Just (expr2,restString2) -> Just (AddA expr1 expr2, restString2)
+        Just (expr2, restString2) -> Just (AddA expr1 expr2, restString2) -- Se a análise for bem-sucedida, cria uma expressão de adição e retorna a lista restante
         Nothing -> Nothing
-    Just (expr1,("-":restString1)) ->
+    Just (expr1, ("-":restString1)) -> -- Se a próxima string for "-", continua com a análise da expressão de subtração.
       case parseSumOrProdOrIntOrPar restString1 of
-        Just (expr2,restString2) -> Just (SubA expr1 expr2, restString2)
+        Just (expr2, restString2) -> Just (SubA expr1 expr2, restString2)
         Nothing -> Nothing
     result -> result
 
@@ -403,8 +411,8 @@ testPart1 = do
 testPart2 :: IO ()
 testPart2 = do
   let testResults =
-        [ testParser "x := 5; x := x - 1;" == ("", "x=4")
-        , testParser "x := 0 - 2;" == ("", "x=-2")
+        [ testParser "x := 5; x := x - 1;" == ("", "x=4") --work
+        , testParser "x := 0 - 2;" == ("", "x=-2") --work
         , testParser "if (not True and 2 <= 5 = 3 == 4) then x :=1; else y := 2;" == ("", "y=2")
         , testParser "x := 42; if x <= 43 then x := 1; else (x := 33; x := x+1;);" == ("", "x=1")
         , testParser "x := 42; if x <= 43 then x := 1; else x := 33; x := x+1;" == ("", "x=2")
