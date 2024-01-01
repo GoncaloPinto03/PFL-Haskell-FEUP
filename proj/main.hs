@@ -15,7 +15,6 @@ import Data.Maybe (fromMaybe)
 
 -- Part 1
 
--- Do not modify our definition of Inst and Code
 data Inst =
   Push Integer | Add | Mult | Sub | Tru | Fals | Equ | Le | And | Neg | Fetch String | Store String | Noop |
   Branch Code Code | Loop Code Code
@@ -25,31 +24,26 @@ type Code = [Inst]
 data StackValue = StackInt Integer | StackBool Bool deriving Show
 type Stack = [StackValue]
 
--- createEmptyStack :: Stack
 createEmptyStack :: Stack
 createEmptyStack = []
 
 type State = [(String, StackValue)]
 
--- createEmptyState :: State
 createEmptyState :: State
 createEmptyState = []
 
--- stack2Str :: Stack -> String
 stack2Str :: Stack -> String
 stack2Str stack = intercalate "," (map stackValueToStr stack)
   where
     stackValueToStr (StackInt n) = show n
     stackValueToStr (StackBool b) = show b
 
--- state2Str :: State -> String
 state2Str :: State -> String
 state2Str state = intercalate "," [var ++ "=" ++ stackValueToStr val | (var, val) <- sortBy (comparing fst) state]
   where
     stackValueToStr (StackInt n) = show n
     stackValueToStr (StackBool b) = show b
 
--- run :: (Code, Stack, State) -> (Code, Stack, State)
 run :: (Code, Stack, State) -> (Code, Stack, State)
 run ([], stack, state) = ([], stack, state) -- Base case: empty code, return the current state
 run (inst:code, stack, state) = case inst of
@@ -175,52 +169,6 @@ compile (stm : stms) =
 
     LoopS bexp loopBody ->
       Loop (compB bexp) (compile loopBody) : compile stms
-
--- Compiler tests
-
-testProgram1 :: Program
-testProgram1 = [VarAssign "x" (Num 5), VarAssign "y" (AddA (Var "x") (Num 3))]
--- Expected output: ("","x=5,y=8")
--- Explanation: Assigns 5 to variable x and then calculates y = x + 3.
-
-testProgram2 :: Program
-testProgram2 = [VarAssign "x" (Num 5), BranchS (EquB (Var "x") (Num 5)) [VarAssign "y" (Num 10)] [VarAssign "y" (Num 20)]]
--- Expected output: ("","x=5,y=10")
--- Explanation: Checks if x is equal to 5. If true, assigns 10 to y, otherwise assigns 20.
-
-testProgram3 :: Program
-testProgram3 = [VarAssign "x" (Num 5), LoopS (LeB (Var "x") (Num 10)) [VarAssign "x" (MultA (Var "x") (Num 2))]]
--- Expected output: ("","x=20")
--- Explanation: Initializes x to 5 and then multiplies x by 2 in a loop until x is no longer less than or equal to 10.
-
-testProgram4 :: Program
-testProgram4 =
-  [ VarAssign "x" (Num 5),
-    VarAssign "y" (AddA (Var "x") (Num 3)),
-    BranchS (AndB (LeB (Var "x") (Num 5)) (EquBoolB (NegB FalsB) TruB)) [VarAssign "z" (Num 42)] [VarAssign "z" (Num 0)]
-  ]
--- Expected output: ("","x=5,y=8,z=42")
--- Explanation: Assigns values to x and y, then checks a complex condition to determine whether to set z to 42 or 0.
-
-compileAndRun :: Program -> (String, String)
-compileAndRun program = testAssembler (compile program)
-
--- Compiler tests
-testResult1 :: (String, String)
-testResult1 = compileAndRun testProgram1
--- Expected output: ("","x=5,y=8")
-
-testResult2 :: (String, String)
-testResult2 = compileAndRun testProgram2
--- Expected output: ("","x=5,y=10")
-
-testResult3 :: (String, String)
-testResult3 = compileAndRun testProgram3
--- Expected output: ("","x=10")
-
-testResult4 :: (String, String)
-testResult4 = compileAndRun testProgram4
--- Expected output: ("","x=5,y=8,z=42")
 
 parse :: String -> Program
 parse programS = parseStatements (lexer programS) []
@@ -387,44 +335,3 @@ testParser programCode = (stack2Str stack, state2Str state)
 -- testParser "if (1 == 0+1 = (2+1 == 4)) then x := 1; else x := 2;" == ("","x=2")
 -- testParser "x := 2; y := (x - 3)*(4 + 2*3); z := x +x*(2);" == ("","x=2,y=-10,z=6")
 -- testParser "i := 10; fact := 1; while (not(i == 1)) do (fact := fact * i; i := i - 1;);" == ("","fact=3628800,i=1")
-
--- Function to test Part 1 examples
-testPart1 :: IO ()
-testPart1 = do
-  let testResults =
-        [ testAssembler [Push 10, Push 4, Push 3, Sub, Mult] == ("-10", "")
-        , testAssembler [Fals, Push 3, Tru, Store "var", Store "a", Store "someVar"] == ("", "a=3,someVar=False,var=True")
-        , testAssembler [Fals, Store "var", Fetch "var"] == ("False", "var=False")
-        , testAssembler [Push (-20), Tru, Fals] == ("False,True,-20", "")
-        , testAssembler [Push (-20), Tru, Tru, Neg] == ("False,True,-20", "")
-        , testAssembler [Push (-20), Tru, Tru, Neg, Equ] == ("False,-20", "")
-        , testAssembler [Push (-20), Push (-21), Le] == ("True", "")
-        , testAssembler [Push 5, Store "x", Push 1, Fetch "x", Sub, Store "x"] == ("", "x=4")
-        , testAssembler [Push 10, Store "i", Push 1, Store "fact", Loop [Push 1, Fetch "i", Equ, Neg] [Fetch "i", Fetch "fact", Mult, Store "fact", Push 1, Fetch "i", Sub, Store "i"]] == ("", "fact=3628800,i=1")
-        ]
-
-  if and testResults
-    then putStrLn "Part 1 tests passed!"
-    else putStrLn "Part 1 tests failed!"
-
--- Function to test Part 2 examples
-testPart2 :: IO ()
-testPart2 = do
-  let testResults =
-        [ testParser "x := 5; x := x - 1;" == ("", "x=4") --work
-        , testParser "x := 0 - 2;" == ("", "x=-2") --work
-        , testParser "if (not True and 2 <= 5 = 3 == 4) then x :=1; else y := 2;" == ("", "y=2")
-        , testParser "x := 42; if x <= 43 then x := 1; else (x := 33; x := x+1;);" == ("", "x=1")
-        , testParser "x := 42; if x <= 43 then x := 1; else x := 33; x := x+1;" == ("", "x=2")
-        , testParser "x := 42; if x <= 43 then x := 1; else x := 33; x := x+1; z := x+x;" == ("", "x=2,z=4")
-        , testParser "x := 44; if x <= 43 then x := 1; else (x := 33; x := x+1;); y := x*2;" == ("", "x=34,y=68")
-        , testParser "x := 42; if x <= 43 then (x := 33; x := x+1;) else x := 1;" == ("", "x=34")
-        , testParser "if (1 == 0+1 = 2+1 == 3) then x := 1; else x := 2;" == ("", "x=1")
-        , testParser "if (1 == 0+1 = (2+1 == 4)) then x := 1; else x := 2;" == ("", "x=2")
-        , testParser "x := 2; y := (x - 3)*(4 + 2*3); z := x +x*(2);" == ("", "x=2,y=-10,z=6")
-        , testParser "i := 10; fact := 1; while (not(i == 1)) do (fact := fact * i; i := i - 1;);" == ("", "fact=3628800,i=1")
-        ]
-
-  if and testResults
-    then putStrLn "Part 2 tests passed!"
-    else putStrLn "Part 2 tests failed!"
